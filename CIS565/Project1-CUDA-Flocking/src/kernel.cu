@@ -17,6 +17,8 @@
 
 #define checkCUDAErrorWithLine(msg) checkCUDAError(msg, __LINE__)
 
+#define NEIGHBOR_SEARCH_SIZE_8 0
+
 /**
  * Check for CUDA errors; print and exit if there was a problem.
  */
@@ -166,7 +168,11 @@ void Boids::initSimulation(int N)
 	checkCUDAErrorWithLine("kernGenerateRandomPosArray failed!");
 
 	// LOOK-2.1 computing grid params
+#if NEIGHBOR_SEARCH_SIZE_8
 	gridCellWidth = 2.0f * std::max(std::max(rule1Distance, rule2Distance), rule3Distance);
+#else
+	gridCellWidth = std::max(std::max(rule1Distance, rule2Distance), rule3Distance);
+#endif
 	int halfSideCount = (int)(scene_scale / gridCellWidth) + 1;
 	gridSideCount = 2 * halfSideCount;
 
@@ -462,19 +468,24 @@ __global__ void kernUpdateVelNeighborSearchScattered(
 	glm::vec3 fractPosInGridSpace = glm::fract(posInGridSpace);
 
 	// - Identify which cells may contain neighbors. This isn't always 8.
-	int gridOffset;	 // search range in each direciton, e.g. [-1, 1] means 3 cells
-	int minCells[3]; // minX/Y/Z
-	int maxCells[3]; // maxX/Y/Z
+	int minCells[3] = {}; // minX/Y/Z
+	int maxCells[3] = {}; // maxX/Y/Z
 
 	for (int i = 0; i < 3; ++i)
 	{
-		gridOffset = 0;
+		int start, end;
+#if NEIGHBOR_SEARCH_SIZE_8
+		int gridOffset = 1;
 		if (fractPosInGridSpace[i] < 0.5f)
 		{
 			gridOffset = -1;
 		}
-		int start = intPosInGridSpace[i];
-		int end = intPosInGridSpace[i] + gridOffset;
+		start = intPosInGridSpace[i];
+		end = intPosInGridSpace[i] + gridOffset;
+#else
+		start = intPosInGridSpace[i] - 1;
+		end = intPosInGridSpace[i] + 1;
+#endif
 
 		// clamp cell search bounds
 		minCells[i] = imax(0, imin(start, end));
@@ -614,19 +625,24 @@ __global__ void kernUpdateVelNeighborSearchCoherent(
 	glm::vec3 fractPosInGridSpace = glm::fract(posInGridSpace);
 
 	// - Identify which cells may contain neighbors. This isn't always 8.
-	int gridOffset;	 // search range in each direciton, e.g. [-1, 1] means 3 cells
-	int minCells[3]; // minX/Y/Z
-	int maxCells[3]; // maxX/Y/Z
+	int minCells[3] = {}; // minX/Y/Z
+	int maxCells[3] = {}; // maxX/Y/Z
 
 	for (int i = 0; i < 3; ++i)
 	{
-		gridOffset = 0;
+		int start, end;
+#if NEIGHBOR_SEARCH_SIZE_8
+		int gridOffset = 1;
 		if (fractPosInGridSpace[i] < 0.5f)
 		{
 			gridOffset = -1;
 		}
-		int start = intPosInGridSpace[i];
-		int end = intPosInGridSpace[i] + gridOffset;
+		start = intPosInGridSpace[i];
+		end = intPosInGridSpace[i] + gridOffset;
+#else
+		start = intPosInGridSpace[i] - 1;
+		end = intPosInGridSpace[i] + 1;
+#endif
 
 		// clamp cell search bounds
 		minCells[i] = imax(0, imin(start, end));

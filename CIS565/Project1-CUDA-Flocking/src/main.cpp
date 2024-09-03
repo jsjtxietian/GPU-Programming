@@ -18,8 +18,10 @@
 #define COHERENT_GRID 1
 
 // LOOK-1.2 - change this to adjust particle count in the simulation
-const int N_FOR_VIS = 5000;
+const int N_FOR_VIS = 10000;
 const float DT = 0.2f;
+
+static float total_cuda_ms = 0;
 
 /**
  * C main function.
@@ -198,6 +200,12 @@ void runCUDA() {
   cudaGLMapBufferObject((void **)&dptrVertPositions, boidVBO_positions);
   cudaGLMapBufferObject((void **)&dptrVertVelocities, boidVBO_velocities);
 
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+
+  cudaEventRecord(start);
+
 // execute the kernel
 #if UNIFORM_GRID && COHERENT_GRID
   Boids::stepSimulationCoherentGrid(DT);
@@ -206,6 +214,12 @@ void runCUDA() {
 #else
   Boids::stepSimulationNaive(DT);
 #endif
+
+  cudaEventRecord(stop);
+  cudaEventSynchronize(stop);
+  float milliseconds = 0;
+  cudaEventElapsedTime(&milliseconds, start, stop);
+  total_cuda_ms += milliseconds;
 
 #if VISUALIZE
   Boids::copyBoidsToVBO(dptrVertPositions, dptrVertVelocities);
@@ -217,6 +231,7 @@ void runCUDA() {
 
 void mainLoop() {
   double fps = 0;
+  double cuda_time = 0;
   double timebase = 0;
   int frame = 0;
 
@@ -231,6 +246,9 @@ void mainLoop() {
 
     if (time - timebase > 1.0) {
       fps = frame / (time - timebase);
+
+      cuda_time = total_cuda_ms / frame;
+      total_cuda_ms = 0;
       timebase = time;
       frame = 0;
     }
@@ -238,10 +256,11 @@ void mainLoop() {
     runCUDA();
 
     std::ostringstream ss;
-    ss << "[";
+    ss << "Fps: ";
     ss.precision(1);
-    ss << std::fixed << fps;
-    ss << " fps] " << deviceName;
+    ss << std::fixed << fps << " | ";
+    ss.precision(2);
+    ss << "Cuda time: " << std::fixed << cuda_time << "ms";
     glfwSetWindowTitle(window, ss.str().c_str());
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
