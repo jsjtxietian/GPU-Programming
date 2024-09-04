@@ -620,36 +620,11 @@ __global__ void kernUpdateVelNeighborSearchCoherent(
 		return;
 	}
 
-	glm::vec3 posInGridSpace = (pos[index] - gridMin) * inverseCellWidth;
+	glm::vec3 selfPos = pos[index];
+	glm::vec3 posInGridSpace = (selfPos - gridMin) * inverseCellWidth;
 	glm::ivec3 intPosInGridSpace = glm::floor(posInGridSpace);
 	glm::vec3 fractPosInGridSpace = glm::fract(posInGridSpace);
 
-	// - Identify which cells may contain neighbors. This isn't always 8.
-	int minCells[3] = {}; // minX/Y/Z
-	int maxCells[3] = {}; // maxX/Y/Z
-
-	for (int i = 0; i < 3; ++i)
-	{
-		int start, end;
-#if NEIGHBOR_SEARCH_SIZE_8
-		int gridOffset = 1;
-		if (fractPosInGridSpace[i] < 0.5f)
-		{
-			gridOffset = -1;
-		}
-		start = intPosInGridSpace[i];
-		end = intPosInGridSpace[i] + gridOffset;
-#else
-		start = intPosInGridSpace[i] - 1;
-		end = intPosInGridSpace[i] + 1;
-#endif
-
-		// clamp cell search bounds
-		minCells[i] = imax(0, imin(start, end));
-		maxCells[i] = imin(gridResolution - 1, imax(start, end));
-	}
-
-	// Initialize new velocity components based on boid rules
 	glm::vec3 cohesionCenter(0.0f);
 	int numCohesionNeighbors = 0;
 
@@ -660,16 +635,25 @@ __global__ void kernUpdateVelNeighborSearchCoherent(
 
 	int lastGridIdx = (gridResolution * gridResolution * gridResolution) - 1;
 
-	//   DIFFERENCE: For best results, consider what order the cells should be
-	//   checked in to maximize the memory benefits of reordering the boids data.
-	for (int z = minCells[2]; z <= maxCells[2]; ++z)
+	float maxDistance = imax(imax(rule1Distance, rule2Distance), rule3Distance);
+
+	for (float z = selfPos.z - maxDistance; z <= selfPos.z + maxDistance; z += cellWidth)
 	{
-		for (int y = minCells[1]; y <= maxCells[1]; ++y)
+		for (float y = selfPos.y - maxDistance; y <= selfPos.y + maxDistance; y += cellWidth)
 		{
-			for (int x = minCells[0]; x <= maxCells[0]; ++x)
+			for (float x = selfPos.x - maxDistance; x <= selfPos.x + maxDistance; x += cellWidth)
 			{
+				if ( x < gridMin.x || y < gridMin.y || z < gridMin.z)
+				{
+					continue;
+				}
+
+				int posX = (x - gridMin.x) * inverseCellWidth;
+				int posY = (y - gridMin.y) * inverseCellWidth;
+				int posZ = (z - gridMin.z) * inverseCellWidth;
+
 				// - For each cell, read the start/end indices in the boid pointer array.
-				int gridIdx = gridIndex3Dto1D(x, y, z, gridResolution);
+				int gridIdx = gridIndex3Dto1D(posX, posY, posZ, gridResolution);
 				if (gridIdx < 0 || gridIdx > lastGridIdx)
 				{
 					continue; // skip if past cell bounds
