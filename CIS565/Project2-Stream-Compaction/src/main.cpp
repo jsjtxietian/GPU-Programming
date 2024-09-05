@@ -7,6 +7,7 @@
  */
 
 #include <cstdio>
+#include <cassert>
 #include <stream_compaction/cpu.h>
 #include <stream_compaction/naive.h>
 #include <stream_compaction/efficient.h>
@@ -19,9 +20,79 @@ int *a = new int[SIZE];
 int *b = new int[SIZE];
 int *c = new int[SIZE];
 
-int main(int argc, char* argv[]) {
-    // Scan tests
 
+using namespace StreamCompaction::CPU;
+
+void testScan() {
+    int idata[6] = {1, 2, 3, 4, 5, 6};
+    int odata[6] = {0};
+
+    scan(6, odata, idata);
+    int expected[6] = {0, 1, 3, 6, 10, 15};
+
+    for (int i = 0; i < 6; i++) {
+        assert(odata[i] == expected[i]);
+    }
+}
+
+void testCompactWithoutScan() {
+    int idata[8] = {0, 3, 0, 1, 0, 5, 7, 0};
+    int odata[8] = {0};
+
+    int count = compactWithoutScan(8, odata, idata);
+    int expected[4] = {3, 1, 5, 7};
+
+    assert(count == 4);
+    for (int i = 0; i < count; i++) {
+        assert(odata[i] == expected[i]);
+    }
+}
+
+// Test for compactWithScan
+void testCompactWithScan() {
+    int idata[8] = {0, 3, 0, 1, 0, 5, 7, 0};
+    int odata[8] = {0};
+
+    int count = compactWithScan(8, odata, idata);
+    int expected[4] = {3, 1, 5, 7};
+
+    assert(count == 4);
+    for (int i = 0; i < count; i++) {
+        assert(odata[i] == expected[i]);
+    }
+}
+
+// Test cases for edge cases (array with all zeros, no zeros)
+void testEdgeCases() {
+    // Case 1: All zeros
+    int idata1[6] = {0, 0, 0, 0, 0, 0};
+    int odata1[6] = {0};
+
+    int count1 = compactWithScan(6, odata1, idata1);
+    assert(count1 == 0);
+
+    // Case 2: No zeros
+    int idata2[5] = {1, 2, 3, 4, 5};
+    int odata2[5] = {0};
+
+    int count2 = compactWithScan(5, odata2, idata2);
+    int expected2[5] = {1, 2, 3, 4, 5};
+
+    assert(count2 == 5);
+    for (int i = 0; i < count2; i++) {
+        assert(odata2[i] == expected2[i]);
+    }
+}
+
+int main(int argc, char* argv[]) {
+    
+    // DIY CPU test
+    testScan();
+    testCompactWithoutScan();
+    testCompactWithScan();
+    testEdgeCases();
+
+    // Scan tests
     printf("\n");
     printf("****************\n");
     printf("** SCAN TESTS **\n");

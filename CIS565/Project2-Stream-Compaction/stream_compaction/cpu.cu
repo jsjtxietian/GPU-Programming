@@ -2,6 +2,7 @@
 #include "cpu.h"
 
 #include "common.h"
+#include <vector>
 
 namespace StreamCompaction
 {
@@ -15,15 +16,19 @@ namespace StreamCompaction
         }
 
         /**
-         * CPU scan (prefix sum).
+         * CPU scan (prefix sum). exclusive
          * For performance analysis, this is supposed to be a simple for loop.
          * (Optional) For better understanding before starting moving to GPU, you can simulate your GPU scan in this function first.
          */
         void scan(int n, int *odata, const int *idata)
         {
-            timer().startCpuTimer();
-            // TODO
-            timer().endCpuTimer();
+            // timer().startCpuTimer();
+            odata[0] = 0;
+            for (int i = 1; i < n; i++)
+            {
+                odata[i] = odata[i - 1] + idata[i - 1];
+            }
+            // timer().endCpuTimer();
         }
 
         /**
@@ -34,9 +39,14 @@ namespace StreamCompaction
         int compactWithoutScan(int n, int *odata, const int *idata)
         {
             timer().startCpuTimer();
-            // TODO
+            int count = 0;
+            for(int i = 0 ; i < n ; i++) {
+                if (idata[i] != 0) {
+                    odata[count++] = idata[i];
+                }
+            }
             timer().endCpuTimer();
-            return -1;
+            return count;
         }
 
         /**
@@ -46,10 +56,26 @@ namespace StreamCompaction
          */
         int compactWithScan(int n, int *odata, const int *idata)
         {
+            std::vector<int> temp_bool(n,0);
+            std::vector<int> temp_scan(n,0);
+            int count = 0;
+
             timer().startCpuTimer();
-            // TODO
+
+            for(int i = 0 ; i < n ; i++) {
+                temp_bool[i] = idata[i] != 0;
+            }
+
+            scan(n, temp_scan.data(), temp_bool.data());
+            for (int i = 0 ; i < n ; i ++) {
+                if (temp_bool[i] != 0) {
+                    odata[temp_scan[i]] = idata[i];
+                    count++;
+                }
+            }
+
             timer().endCpuTimer();
-            return -1;
+            return count;
         }
     }
 }

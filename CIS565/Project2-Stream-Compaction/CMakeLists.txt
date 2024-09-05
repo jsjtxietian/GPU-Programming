@@ -27,8 +27,9 @@ include(${CMAKE_MODULE_PATH}/CUDAComputesList.cmake)
 
 list(APPEND CUDA_NVCC_FLAGS ${CUDA_GENERATE_CODE})
 list(APPEND CUDA_NVCC_FLAGS_DEBUG "-g -G")
-set(CUDA_VERBOSE_BUILD ON)
+list(APPEND CUDA_NVCC_FLAGS_DEBUG "-Xcompiler /FS")
 
+set(CUDA_VERBOSE_BUILD ON)
 if(WIN32)
     # Set up include and lib paths
     set(CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER} CACHE FILEPATH "Host side compiler used by NVCC" FORCE)
