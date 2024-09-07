@@ -84,13 +84,18 @@ void testEdgeCases() {
     }
 }
 
+void testGPUscan() {
+    // int idata[9] = { 0,1,2,3,4,5,6,7,8};
+    // int odata[9] = {-1,-1,-1,-1,-1,-1,-1,-1,-1};
+    // printArray(9, idata, false);
+    // StreamCompaction::Efficient::scan(9, odata, idata);
+    // printArray(9, odata, false);
+}
+
 int main(int argc, char* argv[]) {
     
-    // DIY CPU test
-    testScan();
-    testCompactWithoutScan();
-    testCompactWithScan();
-    testEdgeCases();
+    // DIY test
+    testGPUscan();
 
     // Scan tests
     printf("\n");
@@ -145,7 +150,7 @@ int main(int argc, char* argv[]) {
     printDesc("work-efficient scan, power-of-two");
     StreamCompaction::Efficient::scan(SIZE, c, a);
     printElapsedTime(StreamCompaction::Efficient::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
-    //printArray(SIZE, c, true);
+    printArray(SIZE, c, true);
     printCmpResult(SIZE, b, c);
 
     zeroArray(SIZE, c);
@@ -155,18 +160,19 @@ int main(int argc, char* argv[]) {
     //printArray(NPOT, c, true);
     printCmpResult(NPOT, b, c);
 
+
     zeroArray(SIZE, c);
     printDesc("thrust scan, power-of-two");
     StreamCompaction::Thrust::scan(SIZE, c, a);
     printElapsedTime(StreamCompaction::Thrust::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
-    //printArray(SIZE, c, true);
+    printArray(SIZE, c, true);
     printCmpResult(SIZE, b, c);
 
     zeroArray(SIZE, c);
     printDesc("thrust scan, non-power-of-two");
     StreamCompaction::Thrust::scan(NPOT, c, a);
     printElapsedTime(StreamCompaction::Thrust::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
-    //printArray(NPOT, c, true);
+    printArray(NPOT, c, true);
     printCmpResult(NPOT, b, c);
 
     printf("\n");
@@ -211,7 +217,7 @@ int main(int argc, char* argv[]) {
     printDesc("work-efficient compact, power-of-two");
     count = StreamCompaction::Efficient::compact(SIZE, c, a);
     printElapsedTime(StreamCompaction::Efficient::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
-    //printArray(count, c, true);
+    printArray(count, c, true);
     printCmpLenResult(count, expectedCount, b, c);
 
     zeroArray(SIZE, c);
