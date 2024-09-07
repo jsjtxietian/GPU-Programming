@@ -18,7 +18,7 @@ int cmpArrays(int n, T *a, T *b) {
 }
 
 void printDesc(const char *desc) {
-    printf("==== %s ====\n", desc);
+    printf("\n==== %s ====\n", desc);
 }
 
 template<typename T>
