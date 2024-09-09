@@ -22,13 +22,13 @@ namespace StreamCompaction
          */
         void scan(int n, int *odata, const int *idata)
         {
-            // timer().startCpuTimer();
+            timer().startCpuTimer();
             odata[0] = 0;
             for (int i = 1; i < n; i++)
             {
                 odata[i] = odata[i - 1] + idata[i - 1];
             }
-            // timer().endCpuTimer();
+            timer().endCpuTimer();
         }
 
         /**
@@ -40,8 +40,10 @@ namespace StreamCompaction
         {
             timer().startCpuTimer();
             int count = 0;
-            for(int i = 0 ; i < n ; i++) {
-                if (idata[i] != 0) {
+            for (int i = 0; i < n; i++)
+            {
+                if (idata[i] != 0)
+                {
                     odata[count++] = idata[i];
                 }
             }
@@ -56,25 +58,28 @@ namespace StreamCompaction
          */
         int compactWithScan(int n, int *odata, const int *idata)
         {
-            std::vector<int> temp_bool(n,0);
-            std::vector<int> temp_scan(n,0);
-            int count = 0;
+            std::vector<int> temp_bool(n, 0);
+            std::vector<int> temp_scan(n, 0);
 
-            timer().startCpuTimer();
+            // timer().startCpuTimer();
 
-            for(int i = 0 ; i < n ; i++) {
+            for (int i = 0; i < n; i++)
+            {
                 temp_bool[i] = idata[i] != 0;
             }
 
             scan(n, temp_scan.data(), temp_bool.data());
-            for (int i = 0 ; i < n ; i ++) {
-                if (temp_bool[i] != 0) {
+            int count = temp_scan[n - 1] + temp_bool[n - 1];
+
+            for (int i = 0; i < n; i++)
+            {
+                if (temp_bool[i] != 0)
+                {
                     odata[temp_scan[i]] = idata[i];
-                    count++;
                 }
             }
 
-            timer().endCpuTimer();
+            // timer().endCpuTimer();
             return count;
         }
     }

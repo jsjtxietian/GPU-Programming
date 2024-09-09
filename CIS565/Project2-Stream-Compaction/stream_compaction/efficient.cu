@@ -59,36 +59,32 @@ namespace StreamCompaction
          */
         void scan(int n, int *odata, const int *idata)
         {
-            const int blockSize = 128;
-            dim3 blocksPerData((n + blockSize - 1) / blockSize);
-
             const int arrLen = n * sizeof(int);
             const int paddedN = 1 << ilog2ceil(n);
             const int paddedLen = paddedN * sizeof(int);
+
+            dim3 blocksPerGrid((paddedN + blockSize - 1) / blockSize);
 
             int *devData;
             cudaMalloc((void **)&devData, paddedLen);
             cudaMemcpy(devData, idata, arrLen, cudaMemcpyHostToDevice);
             cudaMemset(devData + n, 0, paddedLen - arrLen);
 
-            // timer().startGpuTimer();
+            timer().startGpuTimer();
             // TODO
             for (int d = 0; d <= log2(paddedN) - 1; d++)
             {
-                up_sweep<<<blocksPerData, blockSize>>>(paddedN, d, devData);
+                up_sweep<<<blocksPerGrid, blockSize>>>(paddedN, d, devData);
             }
-
+            cudaDeviceSynchronize();
             // x[n-1] = 0
-            {
-                int zero = 0;
-                cudaMemcpy(devData + paddedN - 1, &zero, sizeof(int), cudaMemcpyHostToDevice);
-            }
+            cudaMemset(devData + paddedN - 1, 0, sizeof(int));
 
             for (int d = log2(paddedN) - 1; d >= 0; d--)
             {
-                down_sweep<<<blocksPerData, blockSize>>>(paddedN, d, devData);
+                down_sweep<<<blocksPerGrid, blockSize>>>(paddedN, d, devData);
             }
-            // timer().endGpuTimer();
+            timer().endGpuTimer();
 
             cudaMemcpy(odata, devData, arrLen, cudaMemcpyDeviceToHost);
         }
@@ -104,12 +100,11 @@ namespace StreamCompaction
          */
         int compact(int n, int *odata, const int *idata)
         {
-            const int blockSize = 128;
-            dim3 blocksPerData((n + blockSize - 1) / blockSize);
+            dim3 blocksPerGrid((n + blockSize - 1) / blockSize);
 
             const int arrSize = n * sizeof(int);
 
-            int *devInData, *devOutData,*bools, *indices;
+            int *devInData, *devOutData, *bools, *indices;
             cudaMalloc((void **)&devInData, arrSize);
             cudaMalloc((void **)&devOutData, arrSize);
             cudaMalloc((void **)&bools, arrSize);
@@ -117,13 +112,13 @@ namespace StreamCompaction
 
             cudaMemcpy(devInData, idata, arrSize, cudaMemcpyHostToDevice);
 
-            timer().startGpuTimer();
+            // timer().startGpuTimer();
             // TODO
-            Common::kernMapToBoolean<<<blocksPerData, blockSize>>>(n, bools, devInData);
+            Common::kernMapToBoolean<<<blocksPerGrid, blockSize>>>(n, bools, devInData);
             scan(n, indices, bools);
-            Common::kernScatter<<<blocksPerData, blockSize>>>(n, devOutData, devInData, bools, indices);
+            Common::kernScatter<<<blocksPerGrid, blockSize>>>(n, devOutData, devInData, bools, indices);
 
-            timer().endGpuTimer();
+            // timer().endGpuTimer();
 
             cudaMemcpy(odata, devOutData, arrSize, cudaMemcpyDeviceToHost);
 

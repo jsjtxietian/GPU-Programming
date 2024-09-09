@@ -39,8 +39,7 @@ namespace StreamCompaction
          */
         void scan(int n, int *odata, const int *idata)
         {
-            const int blockSize = 128;
-            dim3 blocksPerData((n + blockSize - 1) / blockSize);
+            dim3 blocksPerGrid((n + blockSize - 1) / blockSize);
 
             int *devData1;
             int *devData2;
@@ -53,7 +52,7 @@ namespace StreamCompaction
             // TODO
             for (int d = 1; d <= ilog2ceil(n); d++)
             {
-                scan<<<blocksPerData, blockSize>>>(n, d, devData1, devData2);
+                scan<<<blocksPerGrid, blockSize>>>(n, d, devData1, devData2);
                 std::swap(devData1, devData2);
             }
 
