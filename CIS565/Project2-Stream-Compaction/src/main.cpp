@@ -8,13 +8,15 @@
 
 #include <cstdio>
 #include <cassert>
+#include <algorithm>
 #include <stream_compaction/cpu.h>
 #include <stream_compaction/naive.h>
 #include <stream_compaction/efficient.h>
 #include <stream_compaction/thrust.h>
+#include <stream_compaction/radix.h>
 #include "testing_helpers.hpp"
 
-const int SIZE = 1 << 24; // feel free to change the size of array
+const int SIZE = 1 << 9; // feel free to change the size of array
 const int NPOT = SIZE - 3; // Non-Power-Of-Two
 int *a = new int[SIZE];
 int *b = new int[SIZE];
@@ -92,10 +94,17 @@ void testGPUscan() {
     // printArray(9, odata, false);
 }
 
+void testRadixSort() {
+    int idata[] = {4, 7, 2, 6, 3, 5, 1, 0};
+    int odata[8];
+    StreamCompaction::Radix::radixSort(8, odata, idata);
+    printArray(8, odata, false);
+}
+
 int main(int argc, char* argv[]) {
     
     // DIY test
-    testGPUscan();
+    testRadixSort();
 
     // Scan tests
     printf("\n");
@@ -174,6 +183,22 @@ int main(int argc, char* argv[]) {
     printElapsedTime(StreamCompaction::Thrust::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
     printArray(NPOT, c, true);
     printCmpResult(NPOT, b, c);
+
+    int *sortedA = new int[SIZE];
+    std::memcpy(sortedA, a, SIZE * sizeof(int)); 
+    std::sort(sortedA, sortedA + SIZE);
+
+    zeroArray(SIZE, c);
+    printDesc("radix sort");
+    StreamCompaction::Radix::radixSort(SIZE, c, a);
+    printElapsedTime(StreamCompaction::Radix::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+    printCmpResult(SIZE, sortedA, c);
+
+    zeroArray(SIZE, c);
+    printDesc("radix sort, non-power-of-two");
+    StreamCompaction::Radix::radixSort(SIZE, c, a);
+    printElapsedTime(StreamCompaction::Radix::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+    printCmpResult(NPOT, sortedA, c);
 
     printf("\n");
     printf("*****************************\n");
