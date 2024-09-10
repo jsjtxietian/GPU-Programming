@@ -16,95 +16,33 @@
 #include <stream_compaction/radix.h>
 #include "testing_helpers.hpp"
 
-const int SIZE = 1 << 9; // feel free to change the size of array
+const int SIZE = 1 << 3; // feel free to change the size of array
 const int NPOT = SIZE - 3; // Non-Power-Of-Two
 int *a = new int[SIZE];
 int *b = new int[SIZE];
 int *c = new int[SIZE];
 
-
 using namespace StreamCompaction::CPU;
 
-void testScan() {
-    int idata[6] = {1, 2, 3, 4, 5, 6};
-    int odata[6] = {0};
-
-    scan(6, odata, idata);
-    int expected[6] = {0, 1, 3, 6, 10, 15};
-
-    for (int i = 0; i < 6; i++) {
-        assert(odata[i] == expected[i]);
-    }
-}
-
-void testCompactWithoutScan() {
-    int idata[8] = {0, 3, 0, 1, 0, 5, 7, 0};
-    int odata[8] = {0};
-
-    int count = compactWithoutScan(8, odata, idata);
-    int expected[4] = {3, 1, 5, 7};
-
-    assert(count == 4);
-    for (int i = 0; i < count; i++) {
-        assert(odata[i] == expected[i]);
-    }
-}
-
-// Test for compactWithScan
-void testCompactWithScan() {
-    int idata[8] = {0, 3, 0, 1, 0, 5, 7, 0};
-    int odata[8] = {0};
-
-    int count = compactWithScan(8, odata, idata);
-    int expected[4] = {3, 1, 5, 7};
-
-    assert(count == 4);
-    for (int i = 0; i < count; i++) {
-        assert(odata[i] == expected[i]);
-    }
-}
-
-// Test cases for edge cases (array with all zeros, no zeros)
-void testEdgeCases() {
-    // Case 1: All zeros
-    int idata1[6] = {0, 0, 0, 0, 0, 0};
-    int odata1[6] = {0};
-
-    int count1 = compactWithScan(6, odata1, idata1);
-    assert(count1 == 0);
-
-    // Case 2: No zeros
-    int idata2[5] = {1, 2, 3, 4, 5};
-    int odata2[5] = {0};
-
-    int count2 = compactWithScan(5, odata2, idata2);
-    int expected2[5] = {1, 2, 3, 4, 5};
-
-    assert(count2 == 5);
-    for (int i = 0; i < count2; i++) {
-        assert(odata2[i] == expected2[i]);
-    }
-}
-
 void testGPUscan() {
-    // int idata[9] = { 0,1,2,3,4,5,6,7,8};
-    // int odata[9] = {-1,-1,-1,-1,-1,-1,-1,-1,-1};
-    // printArray(9, idata, false);
-    // StreamCompaction::Efficient::scan(9, odata, idata);
-    // printArray(9, odata, false);
+    int idata[8] = { 0,1,2,3,4,5,6,7};
+    int odata[8];
+    printArray(8, idata, false);
+    StreamCompaction::Naive::scan(8, odata, idata, true);
+    printArray(8, odata, false);
 }
 
 void testRadixSort() {
     int idata[] = {4, 7, 2, 6, 3, 5, 1, 0};
     int odata[8];
     StreamCompaction::Radix::radixSort(8, odata, idata);
-    printArray(8, odata, false);
+    //printArray(8, odata, false);
 }
 
 int main(int argc, char* argv[]) {
     
     // DIY test
-    testRadixSort();
+    testGPUscan();
 
     // Scan tests
     printf("\n");
@@ -131,15 +69,24 @@ int main(int argc, char* argv[]) {
     printDesc("cpu scan, non-power-of-two");
     StreamCompaction::CPU::scan(NPOT, c, a);
     printElapsedTime(StreamCompaction::CPU::timer().getCpuElapsedTimeForPreviousOperation(), "(std::chrono Measured)");
-    printArray(NPOT, b, true);
+    //printArray(NPOT, b, true);
     printCmpResult(NPOT, b, c);
 
     zeroArray(SIZE, c);
     printDesc("naive scan, power-of-two");
     StreamCompaction::Naive::scan(SIZE, c, a);
     printElapsedTime(StreamCompaction::Naive::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
-    printArray(SIZE, c, true);
+    //printArray(SIZE, c, true);
     printCmpResult(SIZE, b, c);
+
+    if (SIZE <= blockSize) {
+        zeroArray(SIZE, c);
+        printDesc("naive scan opt, power-of-two");
+        StreamCompaction::Naive::scan(SIZE, c, a, true);
+        printElapsedTime(StreamCompaction::Naive::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+        printArray(SIZE, c, true);
+        printCmpResult(SIZE, b, c);
+    }
 
     // For bug-finding only: Array of 1s to help find bugs in stream compaction or scan
     // onesArray(SIZE, c);
@@ -154,6 +101,15 @@ int main(int argc, char* argv[]) {
     printElapsedTime(StreamCompaction::Naive::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
     //printArray(SIZE, c, true);
     printCmpResult(NPOT, b, c);
+
+    if (SIZE <= blockSize) {
+        zeroArray(SIZE, c);
+        printDesc("naive scan opt, non-power-of-two");
+        StreamCompaction::Naive::scan(NPOT, c, a, true);
+        printElapsedTime(StreamCompaction::Naive::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+        //printArray(SIZE, c, true);
+        printCmpResult(NPOT, b, c);
+    }
 
     zeroArray(SIZE, c);
     printDesc("work-efficient scan, power-of-two");
