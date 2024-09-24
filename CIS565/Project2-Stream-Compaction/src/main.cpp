@@ -16,7 +16,7 @@
 #include <stream_compaction/radix.h>
 #include "testing_helpers.hpp"
 
-const int SIZE = 1 << 3; // feel free to change the size of array
+const int SIZE = 1 << 22; // feel free to change the size of array
 const int NPOT = SIZE - 3; // Non-Power-Of-Two
 int *a = new int[SIZE];
 int *b = new int[SIZE];
@@ -142,7 +142,12 @@ int main(int argc, char* argv[]) {
 
     int *sortedA = new int[SIZE];
     std::memcpy(sortedA, a, SIZE * sizeof(int)); 
+    printDesc("quick sort");
+    StreamCompaction::Common::PerformanceTimer quickSortTimer;
+    quickSortTimer.startCpuTimer();
     std::sort(sortedA, sortedA + SIZE);
+    quickSortTimer.endCpuTimer();
+    printElapsedTime(quickSortTimer.getCpuElapsedTimeForPreviousOperation(), "(std::chrono Measured)");
 
     zeroArray(SIZE, c);
     printDesc("radix sort");
