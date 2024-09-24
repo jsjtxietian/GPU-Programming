@@ -88,7 +88,7 @@ namespace StreamCompaction
 
             if (useOpt)
             {
-                optScan<<<blocksPerGrid, blockSize>>>(devData2, devData1, n);
+                optScan<<<1, blockSize>>>(devData2, devData1, n);
                 cudaMemcpy(odata, devData2, arrLen, cudaMemcpyDeviceToHost);
             }
             else

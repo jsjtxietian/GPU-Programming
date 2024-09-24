@@ -54,10 +54,51 @@ namespace StreamCompaction
             idata[index + stride - 1] += t;
         }
 
+        __global__ void scan_opt(int n, int *odata, int *idata)
+        {
+            extern __shared__ int temp[]; // allocated on invocation
+            int thid = threadIdx.x;
+            int offset = 1;
+            temp[2 * thid] = idata[2 * thid]; // load input into shared memory
+            temp[2 * thid + 1] = idata[2 * thid + 1];
+            for (int d = n >> 1; d > 0; d >>= 1) // build sum in place up the tree
+            {
+                __syncthreads();
+                if (thid < d)
+                {
+                    int ai = offset * (2 * thid + 1) - 1;
+                    int bi = offset * (2 * thid + 2) - 1;
+                    temp[bi] += temp[ai];
+                }
+                offset *= 2;
+            }
+            if (thid == 0)
+            {
+                temp[n - 1] = 0;
+            } // clear the last element
+
+            for (int d = 1; d < n; d *= 2) // traverse down tree & build scan
+            {
+                offset >>= 1;
+                __syncthreads();
+                if (thid < d)
+                {
+                    int ai = offset * (2 * thid + 1) - 1;
+                    int bi = offset * (2 * thid + 2) - 1;
+                    int t = temp[ai];
+                    temp[ai] = temp[bi];
+                    temp[bi] += t;
+                }
+            }
+            __syncthreads();
+            odata[2 * thid] = temp[2 * thid]; // write results to device memory
+            odata[2 * thid + 1] = temp[2 * thid + 1];
+        }
+
         /**
          * Performs prefix-sum (aka scan) on idata, storing the result into odata.
          */
-        void scan(int n, int *odata, const int *idata)
+        void scan(int n, int *odata, const int *idata, bool useOpt)
         {
             const int arrLen = n * sizeof(int);
             const int paddedN = 1 << ilog2ceil(n);
@@ -71,18 +112,24 @@ namespace StreamCompaction
             cudaMemset(devData + n, 0, paddedLen - arrLen);
 
             timer().startGpuTimer();
-            // TODO
-            for (int d = 0; d <= log2(paddedN) - 1; d++)
+            if (useOpt)
             {
-                up_sweep<<<blocksPerGrid, blockSize>>>(paddedN, d, devData);
+                scan_opt<<<1, blockSize / 2>>>(paddedN, devData, devData);
             }
-            cudaDeviceSynchronize();
-            // x[n-1] = 0
-            cudaMemset(devData + paddedN - 1, 0, sizeof(int));
-
-            for (int d = log2(paddedN) - 1; d >= 0; d--)
+            else
             {
-                down_sweep<<<blocksPerGrid, blockSize>>>(paddedN, d, devData);
+                for (int d = 0; d <= log2(paddedN) - 1; d++)
+                {
+                    up_sweep<<<blocksPerGrid, blockSize>>>(paddedN, d, devData);
+                }
+                cudaDeviceSynchronize();
+                // x[n-1] = 0
+                cudaMemset(devData + paddedN - 1, 0, sizeof(int));
+
+                for (int d = log2(paddedN) - 1; d >= 0; d--)
+                {
+                    down_sweep<<<blocksPerGrid, blockSize>>>(paddedN, d, devData);
+                }
             }
             timer().endGpuTimer();
 
