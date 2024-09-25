@@ -10,9 +10,9 @@ GLuint texcoordsLocation = 1;
 GLuint pbo;
 GLuint displayImage;
 
-GLFWwindow* window;
-GuiDataContainer* imguiData = NULL;
-ImGuiIO* io = nullptr;
+GLFWwindow *window;
+GuiDataContainer *imguiData = NULL;
+ImGuiIO *io = nullptr;
 bool mouseOverImGuiWinow = false;
 
 std::string currentTimeString() {
@@ -37,10 +37,14 @@ void initTextures() {
 
 void initVAO(void) {
 	GLfloat vertices[] = {
-		-1.0f, -1.0f,
-		1.0f, -1.0f,
-		1.0f,  1.0f,
-		-1.0f,  1.0f,
+		-1.0f,
+		-1.0f,
+		1.0f,
+		-1.0f,
+		1.0f,
+		1.0f,
+		-1.0f,
+		1.0f,
 	};
 
 	GLfloat texcoords[] = {
@@ -70,7 +74,7 @@ void initVAO(void) {
 }
 
 GLuint initShader() {
-	const char* attribLocations[] = { "Position", "Texcoords" };
+	const char *attribLocations[] = { "Position", "Texcoords" };
 	GLuint program = glslUtility::createDefaultProgram(attribLocations, 2);
 	GLint location;
 
@@ -82,7 +86,7 @@ GLuint initShader() {
 	return program;
 }
 
-void deletePBO(GLuint* pbo) {
+void deletePBO(GLuint *pbo) {
 	if (pbo) {
 		// unregister this buffer object with CUDA
 		cudaGLUnregisterBufferObject(*pbo);
@@ -94,7 +98,7 @@ void deletePBO(GLuint* pbo) {
 	}
 }
 
-void deleteTexture(GLuint* tex) {
+void deleteTexture(GLuint *tex) {
 	glDeleteTextures(1, tex);
 	*tex = (GLuint)NULL;
 }
@@ -130,10 +134,9 @@ void initPBO() {
 	// Allocate data for the buffer. 4-channel 8-bit image
 	glBufferData(GL_PIXEL_UNPACK_BUFFER, size_tex_data, NULL, GL_DYNAMIC_COPY);
 	cudaGLRegisterBufferObject(pbo);
-
 }
 
-void errorCallback(int error, const char* description) {
+void errorCallback(int error, const char *description) {
 	fprintf(stderr, "%s\n", description);
 }
 
@@ -164,7 +167,8 @@ bool init() {
 
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
-	io = &ImGui::GetIO(); (void)io;
+	io = &ImGui::GetIO();
+	(void)io;
 	ImGui::StyleColorsLight();
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
 	ImGui_ImplOpenGL3_Init("#version 120");
@@ -182,15 +186,12 @@ bool init() {
 	return true;
 }
 
-void InitImguiData(GuiDataContainer* guiData)
-{
+void InitImguiData(GuiDataContainer *guiData) {
 	imguiData = guiData;
 }
 
-
 // LOOK: Un-Comment to check ImGui Usage
-void RenderImGui()
-{
+void RenderImGui() {
 	mouseOverImGuiWinow = io->WantCaptureMouse;
 
 	ImGui_ImplOpenGL3_NewFrame();
@@ -203,8 +204,8 @@ void RenderImGui()
 	static float f = 0.0f;
 	static int counter = 0;
 
-	ImGui::Begin("Path Tracer Analytics");                  // Create a window called "Hello, world!" and append into it.
-	
+	ImGui::Begin("Path Tracer Analytics"); // Create a window called "Hello, world!" and append into it.
+
 	// LOOK: Un-Comment to check the output window and usage
 	//ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
 	//ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
@@ -221,20 +222,16 @@ void RenderImGui()
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 	ImGui::End();
 
-
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
 }
 
-bool MouseOverImGuiWindow()
-{
+bool MouseOverImGuiWindow() {
 	return mouseOverImGuiWinow;
 }
 
 void mainLoop() {
 	while (!glfwWindowShouldClose(window)) {
-		
 		glfwPollEvents();
 
 		runCuda();
@@ -250,7 +247,7 @@ void mainLoop() {
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
 		// VAO, shader program, and texture already bound
-		glDrawElements(GL_TRIANGLES, 6,  GL_UNSIGNED_SHORT, 0);
+		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
 
 		// Render ImGui Stuff
 		RenderImGui();
