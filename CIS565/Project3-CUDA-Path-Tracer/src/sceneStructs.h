@@ -55,6 +55,9 @@ struct RenderState {
 	Camera camera;
 	unsigned int iterations;
 	int traceDepth;
+	bool cameraJitter;
+	bool compact;
+	bool sortMaterial;
 	std::vector<glm::vec3> image;
 	std::string imageName;
 };

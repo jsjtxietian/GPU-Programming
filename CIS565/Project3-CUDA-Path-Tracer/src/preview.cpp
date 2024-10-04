@@ -5,6 +5,8 @@
 #include "ImGui/imgui.h"
 #include "ImGui/imgui_impl_glfw.h"
 #include "ImGui/imgui_impl_opengl3.h"
+#include <glm/gtc/matrix_inverse.hpp>
+#include <glm/gtx/string_cast.hpp>
 GLuint positionLocation = 0;
 GLuint texcoordsLocation = 1;
 GLuint pbo;
@@ -218,8 +220,32 @@ void RenderImGui() {
 	//	counter++;
 	//ImGui::SameLine();
 	//ImGui::Text("counter = %d", counter);
-	ImGui::Text("Traced Depth %d", imguiData->TracedDepth);
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+	if (ImGui::InputInt("Traced Depth", &imguiData->scene->state.traceDepth, 1)) {
+		*(imguiData->configChanged) = true;
+	}
+
+	if (ImGui::Checkbox("Camera Jitter", &imguiData->scene->state.cameraJitter)) {
+		*(imguiData->configChanged) = true;
+	}
+
+	if (ImGui::Checkbox("Stream Compact", &imguiData->scene->state.compact)) {
+		*(imguiData->configChanged) = true;
+	}
+
+	if (ImGui::Checkbox("Sort Material", &imguiData->scene->state.sortMaterial)) {
+		// *(imguiData->configChanged) = true;
+	}
+
+	// hack some logic for transform control
+	Geom &sphere = imguiData->scene->geoms[0];
+	if (ImGui::SliderFloat3("Sphere Pos", &sphere.translation[0], -10, 10)) {
+		sphere.transform = utilityCore::buildTransformationMatrix(
+				sphere.translation, sphere.rotation, sphere.scale);
+		sphere.inverseTransform = glm::inverse(sphere.transform);
+		sphere.invTranspose = glm::inverseTranspose(sphere.transform);
+		*(imguiData->configChanged) = true;
+	}
 	ImGui::End();
 
 	ImGui::Render();

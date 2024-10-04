@@ -145,6 +145,8 @@ int Scene::loadCamera() {
 	int arraylen = camera.resolution.x * camera.resolution.y;
 	state.image.resize(arraylen);
 	std::fill(state.image.begin(), state.image.end(), glm::vec3());
+	state.cameraJitter = false;
+	state.compact = true;
 
 	cout << "Loaded camera!" << endl;
 	return 1;
