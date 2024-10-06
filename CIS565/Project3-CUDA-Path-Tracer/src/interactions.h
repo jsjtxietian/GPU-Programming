@@ -71,15 +71,29 @@ __host__ __device__ void scatterRay(
 		glm::vec3 normal,
 		const Material &m,
 		thrust::default_random_engine &rng) {
-	// TODO: implement this.
-	// A basic implementation of pure-diffuse shading will just call the
-	// calculateRandomDirectionInHemisphere defined above.
-	if (m.hasReflective || m.hasRefractive) {
-		pathSegment.color *= m.specular.color;
-		pathSegment.ray.direction = glm::normalize(glm::reflect(pathSegment.ray.direction, normal));
+	glm::vec3 newDirection;
+	glm::vec3 bsdf = glm::vec3(0.0f); // BSDF value
+	float pdf = 1.0f;
+
+	// todo: simulate using a probability distribution instead computing the strength of a ray bounce based on angles.
+	// https://developer.nvidia.com/gpugems/gpugems3/part-iii-rendering/chapter-20-gpu-based-importance-sampling
+	if (m.hasReflective) {
+		newDirection = glm::normalize(glm::reflect(pathSegment.ray.direction, normal));
+		bsdf = m.specular.color;
+		pdf = 1.0f; // Specular reflection is delta distribution
+	} else if (m.hasRefractive) {
+		// todo
 	} else {
-		pathSegment.color *= m.color;
-		pathSegment.ray.direction = glm::normalize(calculateRandomDirectionInHemisphere(normal, rng));
+		newDirection = glm::normalize(calculateRandomDirectionInHemisphere(normal, rng));
+		bsdf = m.color / PI; // Lambertian BRDF: f = kd / π
+		pdf = glm::dot(newDirection, normal) / PI; // PDF for cosine-weighted hemisphere sampling
 	}
+
+	// Update throughput
+	float cosTheta = glm::dot(newDirection, normal);
+	pathSegment.throughput *= bsdf * cosTheta / pdf;
+
+	pathSegment.ray.direction = newDirection;
 	pathSegment.ray.origin = intersect + 0.001f * pathSegment.ray.direction;
+	pathSegment.remainingBounces--;
 }

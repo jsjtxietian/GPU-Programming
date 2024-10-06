@@ -234,7 +234,7 @@ void RenderImGui() {
 	}
 
 	if (ImGui::Checkbox("Sort Material", &imguiData->scene->state.sortMaterial)) {
-		// *(imguiData->configChanged) = true;
+		*(imguiData->configChanged) = true;
 	}
 
 	// hack some logic for transform control
