@@ -75,6 +75,7 @@ static Geom *dev_geoms = NULL;
 static Material *dev_materials = NULL;
 static PathSegment *dev_paths = NULL;
 static ShadeableIntersection *dev_intersections = NULL;
+static ShadeableIntersection *cached_dev_intersections = NULL;
 // ...
 
 void InitDataContainer(GuiDataContainer *imGuiData) {
@@ -101,6 +102,8 @@ void pathtraceInit(Scene *scene) {
 	cudaMalloc(&dev_intersections, pixelcount * sizeof(ShadeableIntersection));
 	cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
 
+	cudaMalloc(&cached_dev_intersections, pixelcount * sizeof(ShadeableIntersection));
+
 	checkCUDAError("pathtraceInit");
 }
 
@@ -111,6 +114,7 @@ void pathtraceFree() {
 	cudaFree(dev_materials);
 	cudaFree(dev_intersections);
 
+	cudaFree(cached_dev_intersections);
 	checkCUDAError("pathtraceFree");
 }
 
@@ -152,6 +156,7 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 		segment.color = glm::vec3(0.0f);
 		segment.throughput = glm::vec3(1.0f);
 
+		// todo: will jitt cause problem when caching first bounce ?
 		if (camJitter) {
 			thrust::default_random_engine rng = makeSeededRandomEngine(iter, index, 0);
 			thrust::uniform_real_distribution<float> u01(0, 1);
@@ -288,7 +293,7 @@ __global__ void finalGather(int nPaths, glm::vec3 *image, PathSegment *iteration
  * of memory management
  */
 void pathtrace(uchar4 *pbo, int frame, int iter) {
-	const int traceDepth = hst_scene->state.traceDepth;
+	const int traceDepth = std::max(hst_scene->state.traceDepth, 1);
 	const Camera &cam = hst_scene->state.camera;
 	const int pixelcount = cam.resolution.x * cam.resolution.y;
 
@@ -345,13 +350,20 @@ void pathtrace(uchar4 *pbo, int frame, int iter) {
 
 	bool iterationComplete = false;
 	while (!iterationComplete) {
-		// clean shading chunks
-		cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
-
 		// tracing
 		dim3 numblocksPathSegmentTracing = (num_paths + blockSize1d - 1) / blockSize1d;
-		computeIntersections<<<numblocksPathSegmentTracing, blockSize1d>>>(
-				depth, num_paths, dev_paths, dev_geoms, hst_scene->geoms.size(), dev_intersections);
+
+		// iter starts with 1
+		if (hst_scene->state.cacheFirstBounce && iter > 1 && depth == 0) {
+			cudaMemcpy(dev_intersections, cached_dev_intersections,
+					pixelcount * sizeof(ShadeableIntersection), cudaMemcpyDeviceToDevice);
+			checkCUDAError("copy from cached_dev_intersections");
+		} else {
+			// clean shading chunks
+			cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
+			computeIntersections<<<numblocksPathSegmentTracing, blockSize1d>>>(
+					depth, num_paths, dev_paths, dev_geoms, hst_scene->geoms.size(), dev_intersections);
+		}
 		checkCUDAError("trace one bounce");
 		cudaDeviceSynchronize();
 		depth++;
@@ -364,7 +376,8 @@ void pathtrace(uchar4 *pbo, int frame, int iter) {
 		// TODO: compare between directly shading the path segments and shading
 		// path segments that have been reshuffled to be contiguous in memory.
 
-		if (hst_scene->state.sortMaterial) {
+		// sortMaterial will change dev_intersections thus affect cached_dev_intersections
+		if (hst_scene->state.sortMaterial && iter > 1) {
 			thrust::sort_by_key(thrust_dev_intersections, thrust_dev_intersections + num_paths,
 					thrust_dev_paths, MaterialSorter());
 		}
@@ -386,6 +399,13 @@ void pathtrace(uchar4 *pbo, int frame, int iter) {
 			checkCUDAError("stream compact");
 		} else {
 			iterationComplete = depth == traceDepth;
+		}
+
+		// depth is incremented before, here 1 means it's the first bounce
+		if (hst_scene->state.cacheFirstBounce && iter == 1 && depth == 1) {
+			cudaMemcpy(cached_dev_intersections, dev_intersections,
+					pixelcount * sizeof(ShadeableIntersection), cudaMemcpyDeviceToDevice);
+			checkCUDAError("copy to cached_dev_intersections");
 		}
 	}
 

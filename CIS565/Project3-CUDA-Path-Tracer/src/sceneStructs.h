@@ -58,6 +58,7 @@ struct RenderState {
 	bool cameraJitter;
 	bool compact;
 	bool sortMaterial;
+	bool cacheFirstBounce;
 	std::vector<glm::vec3> image;
 	std::string imageName;
 };

@@ -147,6 +147,8 @@ int Scene::loadCamera() {
 	std::fill(state.image.begin(), state.image.end(), glm::vec3());
 	state.cameraJitter = false;
 	state.compact = false;
+	state.sortMaterial = false;
+	state.cacheFirstBounce = true;
 
 	cout << "Loaded camera!" << endl;
 	return 1;
