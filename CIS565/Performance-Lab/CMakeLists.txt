@@ -39,6 +39,7 @@ IF(WIN32)
 ENDIF(WIN32)
 
 LIST(APPEND CUDA_NVCC_FLAGS ${CUDA_GENERATE_CODE})
+LIST(APPEND CUDA_NVCC_FLAGS "-lineinfo")
 LIST(APPEND CUDA_NVCC_FLAGS_DEBUG "-g -G")
 SET(CUDA_VERBOSE_BUILD ON)
 
@@ -53,7 +54,7 @@ INCLUDE_DIRECTORIES(
 ########################################
 # Setup the executables
 ########################################
-SET(EXECUTABLES transpose reduction)
+SET(EXECUTABLES transpose reduction reductionrecursive)
 FILE(GLOB headers source/*.h source/*.hpp)
 FOREACH(exe ${EXECUTABLES})
     CUDA_ADD_EXECUTABLE(${exe} source/${exe}.cu ${headers})
