@@ -82,6 +82,7 @@ struct ShadeableIntersection
     float t;
     glm::vec3 surfaceNormal;
     int materialId;
+    // TODO: Since we need position anyway (in gbuffer too), should we store pos ?
 };
 
 // CHECKITOUT - a simple struct for storing scene geometry information per-pixel.

@@ -22,7 +22,8 @@ static double lastY;
 int ui_iterations = 0;
 int startupIterations = 0;
 int lastLoopIterations = 0;
-bool ui_showGbuffer = false;
+bool ui_showGbuffer_pos = false;
+bool ui_showGbuffer_normal = false;
 bool ui_denoise = false;
 int ui_filterSize = 80;
 float ui_colorWeight = 0.45f;
@@ -165,8 +166,10 @@ void runCuda() {
         pathtrace(frame, iteration);
     }
 
-    if (ui_showGbuffer) {
-      showGBuffer(pbo_dptr);
+    if (ui_showGbuffer_pos) {
+      showGBuffer(pbo_dptr, 0);
+    } else if (ui_showGbuffer_normal) {
+      showGBuffer(pbo_dptr, 1);
     } else {
       showImage(pbo_dptr, iteration);
     }

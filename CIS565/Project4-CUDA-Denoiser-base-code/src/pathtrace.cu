@@ -4,6 +4,10 @@
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
 #include <thrust/remove.h>
+#include <thrust/device_vector.h>
+#include <thrust/transform_reduce.h>
+#include <thrust/functional.h>
+#include <thrust/tuple.h>
 
 #include "sceneStructs.h"
 #include "scene.h"
@@ -74,7 +78,8 @@ __global__ void sendImageToPBO(uchar4 *pbo, glm::ivec2 resolution,
 	}
 }
 
-__global__ void gbufferToPBO(uchar4 *pbo, glm::ivec2 resolution, GBufferPixel *gBuffer)
+__global__ void gbufferToPBO(uchar4 *pbo, glm::ivec2 resolution, GBufferPixel *gBuffer, const int mod,
+							 glm::vec3 minPos, glm::vec3 maxPos)
 {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -82,12 +87,27 @@ __global__ void gbufferToPBO(uchar4 *pbo, glm::ivec2 resolution, GBufferPixel *g
 	if (x < resolution.x && y < resolution.y)
 	{
 		int index = x + (y * resolution.x);
-		float timeToIntersect = gBuffer[index].t * 256.0;
 
-		pbo[index].w = 0;
-		pbo[index].x = timeToIntersect;
-		pbo[index].y = timeToIntersect;
-		pbo[index].z = timeToIntersect;
+		if (mod == 0)
+		{
+			glm::vec3 scaledPos = (gBuffer[index].position - minPos) / (maxPos - minPos);
+            scaledPos = glm::clamp(scaledPos, 0.0f, 1.0f); // Ensure values stay in [0, 1]
+
+			pbo[index].x = scaledPos.x * 255;
+			pbo[index].y = scaledPos.y * 255;
+			pbo[index].z = scaledPos.z * 255;
+			pbo[index].w = 0;
+		}
+		else if (mod == 1)
+		{
+			glm::vec3 scaledNormal = (gBuffer[index].normal + 1.0f) * 0.5f * 255.0f; // Map [-1, 1] to [0, 255]
+			scaledNormal = glm::clamp(scaledNormal, 0.0f, 255.0f);
+
+			pbo[index].x = scaledNormal.x;
+			pbo[index].y = scaledNormal.y;
+			pbo[index].z = scaledNormal.z;
+			pbo[index].w = 0;
+		}
 	}
 }
 
@@ -286,7 +306,9 @@ __global__ void generateGBuffer(
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (idx < num_paths)
 	{
-		gBuffer[idx].t = shadeableIntersections[idx].t;
+		gBuffer[idx].position =
+			shadeableIntersections[idx].t * pathSegments[idx].ray.direction + pathSegments[idx].ray.origin;
+		gBuffer[idx].normal = shadeableIntersections[idx].surfaceNormal;
 	}
 }
 
@@ -410,8 +432,64 @@ void pathtrace(int frame, int iter)
 	checkCUDAError("pathtrace");
 }
 
+// Custom functor to find the minimum of two glm::vec3 vectors
+struct pos_min_op
+{
+	__host__ __device__
+		glm::vec3
+		operator()(const glm::vec3 &a, const glm::vec3 &b) const
+	{
+		return glm::vec3(fminf(a.x, b.x), fminf(a.y, b.y), fminf(a.z, b.z));
+	}
+};
+
+// Custom functor to find the maximum of two glm::vec3 vectors
+struct pos_max_op
+{
+	__host__ __device__
+		glm::vec3
+		operator()(const glm::vec3 &a, const glm::vec3 &b) const
+	{
+		return glm::vec3(fmaxf(a.x, b.x), fmaxf(a.y, b.y), fmaxf(a.z, b.z));
+	}
+};
+
+// Functor to extract positions from GBufferPixel
+struct extract_position
+{
+	__host__ __device__
+		glm::vec3
+		operator()(const GBufferPixel &g) const
+	{
+		return g.position;
+	}
+};
+
+// Function to find min and max positions using thrust
+void findMinMaxPositions(GBufferPixel *dev_gBuffer, int pixelCount, glm::vec3 &minPos, glm::vec3 &maxPos)
+{
+	// Create thrust device pointers
+	thrust::device_ptr<GBufferPixel> gBufferPtr(dev_gBuffer);
+
+	// Use transform_reduce to find min position
+	minPos = thrust::transform_reduce(
+		gBufferPtr,
+		gBufferPtr + pixelCount,
+		extract_position(),
+		glm::vec3(FLT_MAX, FLT_MAX, FLT_MAX), // Initial value for min reduction
+		pos_min_op());
+
+	// Use transform_reduce to find max position
+	maxPos = thrust::transform_reduce(
+		gBufferPtr,
+		gBufferPtr + pixelCount,
+		extract_position(),
+		glm::vec3(-FLT_MAX, -FLT_MAX, -FLT_MAX), // Initial value for max reduction
+		pos_max_op());
+}
+
 // CHECKITOUT: this kernel "post-processes" the gbuffer/gbuffers into something that you can visualize for debugging.
-void showGBuffer(uchar4 *pbo)
+void showGBuffer(uchar4 *pbo, const int mod)
 {
 	const Camera &cam = hst_scene->state.camera;
 	const dim3 blockSize2d(8, 8);
@@ -419,8 +497,15 @@ void showGBuffer(uchar4 *pbo)
 		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
 		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
+	glm::vec3 minPos = {};
+	glm::vec3 maxPos = {};
+	if (mod == 0)
+	{
+		findMinMaxPositions(dev_gBuffer, cam.resolution.x * cam.resolution.y, minPos, maxPos);
+	}
+
 	// CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
-	gbufferToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, dev_gBuffer);
+	gbufferToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, dev_gBuffer, mod, minPos, maxPos);
 }
 
 void showImage(uchar4 *pbo, int iter)
