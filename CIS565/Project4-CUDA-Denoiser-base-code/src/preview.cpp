@@ -188,6 +188,8 @@ bool init() {
 static ImGuiWindowFlags windowFlags= ImGuiWindowFlags_None | ImGuiWindowFlags_NoMove;
 static bool ui_hide = false;
 
+const char* items[] = { "No Denoise", "Simple Blur", "A-trous Kernel" };
+
 void drawGui(int windowWidth, int windowHeight) {
     // Dear imgui new frame
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
@@ -210,11 +212,18 @@ void drawGui(int windowWidth, int windowHeight) {
         ui_hide = !ui_hide;
     }
 
-    ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations);
+    if (ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations)) {
+        configChanged = true;
+    }
 
-    ImGui::Checkbox("Denoise", &ui_denoise);
+    if (ImGui::Combo("Denoise", &ui_denoise_method, items, IM_ARRAYSIZE(items)))
+    {
+        configChanged = true;
+    }
 
-    ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
+    if (ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100)){
+        configChanged = true;
+    }
     ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
     ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
     ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);

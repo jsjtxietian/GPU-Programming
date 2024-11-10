@@ -21,17 +21,16 @@ static double lastY;
 // For all the gory GUI details, look at commit 5feb60366e03687bfc245579523402221950c9c5.
 int ui_iterations = 0;
 int startupIterations = 0;
-int lastLoopIterations = 0;
 bool ui_showGbuffer_pos = false;
 bool ui_showGbuffer_normal = false;
-bool ui_denoise = false;
+int ui_denoise_method = 0;
 int ui_filterSize = 80;
 float ui_colorWeight = 0.45f;
 float ui_normalWeight = 0.35f;
 float ui_positionWeight = 0.2f;
 bool ui_saveAndExit = false;
+bool configChanged = true;
 
-static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
 static glm::vec3 cammove;
 
@@ -122,12 +121,7 @@ void saveImage() {
 }
 
 void runCuda() {
-    if (lastLoopIterations != ui_iterations) {
-      lastLoopIterations = ui_iterations;
-      camchanged = true;
-    }
-
-    if (camchanged) {
+    if (configChanged) {
         iteration = 0;
         Camera &cam = renderState->camera;
         cameraPosition.x = zoom * sin(phi) * sin(theta);
@@ -144,7 +138,7 @@ void runCuda() {
         cam.position = cameraPosition;
         cameraPosition += cam.lookAt;
         cam.position = cameraPosition;
-        camchanged = false;
+        configChanged = false;
       }
 
     // Map OpenGL buffer object for writing from CUDA on a single GPU
@@ -196,7 +190,7 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
         saveImage();
         break;
       case GLFW_KEY_SPACE:
-        camchanged = true;
+        configChanged = true;
         renderState = &scene->state;
         Camera &cam = renderState->camera;
         cam.lookAt = ogLookAt;
@@ -219,12 +213,12 @@ void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
     phi -= (xpos - lastX) / width;
     theta -= (ypos - lastY) / height;
     theta = std::fmax(0.001f, std::fmin(theta, PI));
-    camchanged = true;
+    configChanged = true;
   }
   else if (rightMousePressed) {
     zoom += (ypos - lastY) / height;
     zoom = std::fmax(0.1f, zoom);
-    camchanged = true;
+    configChanged = true;
   }
   else if (middleMousePressed) {
     renderState = &scene->state;
@@ -238,7 +232,7 @@ void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
 
     cam.lookAt -= (float) (xpos - lastX) * right * 0.01f;
     cam.lookAt += (float) (ypos - lastY) * forward * 0.01f;
-    camchanged = true;
+    configChanged = true;
   }
   lastX = xpos;
   lastY = ypos;

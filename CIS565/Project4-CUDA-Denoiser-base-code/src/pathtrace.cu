@@ -18,6 +18,10 @@
 #include "intersections.h"
 #include "interactions.h"
 
+extern int ui_denoise_method;
+extern int ui_filterSize;
+extern int ui_iterations;
+
 #define ERRORCHECK 1
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
@@ -91,7 +95,7 @@ __global__ void gbufferToPBO(uchar4 *pbo, glm::ivec2 resolution, GBufferPixel *g
 		if (mod == 0)
 		{
 			glm::vec3 scaledPos = (gBuffer[index].position - minPos) / (maxPos - minPos);
-            scaledPos = glm::clamp(scaledPos, 0.0f, 1.0f); // Ensure values stay in [0, 1]
+			scaledPos = glm::clamp(scaledPos, 0.0f, 1.0f); // Ensure values stay in [0, 1]
 
 			pbo[index].x = scaledPos.x * 255;
 			pbo[index].y = scaledPos.y * 255;
@@ -111,6 +115,27 @@ __global__ void gbufferToPBO(uchar4 *pbo, glm::ivec2 resolution, GBufferPixel *g
 	}
 }
 
+static void generateGaussianKernel(float *kernel, int kernelRadius, float sigma = 1.0f)
+{
+	int size = 2 * kernelRadius + 1;
+	float sum = 0.0f;
+
+	for (int y = -kernelRadius; y <= kernelRadius; ++y)
+	{
+		for (int x = -kernelRadius; x <= kernelRadius; ++x)
+		{
+			float exponent = -(x * x + y * y) / (2.0f * sigma * sigma);
+			kernel[(y + kernelRadius) * size + (x + kernelRadius)] = exp(exponent);
+			sum += kernel[(y + kernelRadius) * size + (x + kernelRadius)];
+		}
+	}
+
+	for (int i = 0; i < size * size; ++i)
+	{
+		kernel[i] /= sum;
+	}
+}
+
 static Scene *hst_scene = NULL;
 static glm::vec3 *dev_image = NULL;
 static Geom *dev_geoms = NULL;
@@ -120,6 +145,9 @@ static ShadeableIntersection *dev_intersections = NULL;
 static GBufferPixel *dev_gBuffer = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
+static glm::vec3 *dev_denoised_image = NULL;
+static float *gaussian_device_kernal = NULL;
+static int gaussian_kernel_radius = 0;
 
 void pathtraceInit(Scene *scene)
 {
@@ -145,6 +173,21 @@ void pathtraceInit(Scene *scene)
 
 	// TODO: initialize any extra device memeory you need
 
+	cudaMalloc(&dev_denoised_image, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_denoised_image, 0, pixelcount * sizeof(glm::vec3));
+
+
+	// for Gaussian
+	gaussian_kernel_radius = ui_filterSize / 2;
+	const int kernelSize = 2 * gaussian_kernel_radius + 1;
+
+	float *gaussian_host_kernal = new float[kernelSize * kernelSize];
+	generateGaussianKernel(gaussian_host_kernal, gaussian_kernel_radius);
+
+	cudaMalloc(&gaussian_device_kernal, kernelSize * kernelSize * sizeof(float));
+	cudaMemcpy(gaussian_device_kernal, gaussian_host_kernal, kernelSize * kernelSize * sizeof(float), cudaMemcpyHostToDevice);
+	delete (gaussian_host_kernal);
+
 	checkCUDAError("pathtraceInit");
 }
 
@@ -157,6 +200,9 @@ void pathtraceFree()
 	cudaFree(dev_intersections);
 	cudaFree(dev_gBuffer);
 	// TODO: clean up any extra device memory you created
+	cudaFree(dev_denoised_image);
+
+	cudaFree(gaussian_device_kernal);
 
 	checkCUDAError("pathtraceFree");
 }
@@ -324,6 +370,54 @@ __global__ void finalGather(int nPaths, glm::vec3 *image, PathSegment *iteration
 	}
 }
 
+
+__global__ void gaussianBlur(glm::ivec2 resolution, glm::vec3 *inputImage, glm::vec3 *outputImage, int kernelRadius, float *kernel)
+{
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y)
+	{
+		int index = x + (y * resolution.x);
+
+		glm::vec3 colorSum = glm::vec3(0.0f);
+		float weightSum = 0.0f;
+
+		// Apply the Gaussian blur filter
+		for (int j = -kernelRadius; j <= kernelRadius; ++j)
+		{
+			for (int i = -kernelRadius; i <= kernelRadius; ++i)
+			{
+				int neighborX = glm::clamp(x + i, 0, resolution.x - 1);
+				int neighborY = glm::clamp(y + j, 0, resolution.y - 1);
+				int neighborIndex = neighborX + (neighborY * resolution.x);
+
+				float weight = kernel[(j + kernelRadius) * (2 * kernelRadius + 1) + (i + kernelRadius)];
+				colorSum += inputImage[neighborIndex] * weight;
+				weightSum += weight;
+			}
+		}
+
+		outputImage[index] = colorSum / weightSum;
+	}
+}
+
+static void denoise(const Camera &cam)
+{
+	if (ui_denoise_method == 1)
+	{
+		// Apply Gaussian blur as a post-processing step
+		dim3 blockSize2d(8, 8);
+		dim3 blocksPerGrid2d(
+			(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+			(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+		gaussianBlur<<<blocksPerGrid2d, blockSize2d>>>(cam.resolution, dev_image, dev_denoised_image, gaussian_kernel_radius, gaussian_device_kernal);
+		cudaMemcpy(dev_image, dev_denoised_image,
+				   cam.resolution.x * cam.resolution.y * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+	}
+}
+
 /**
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
@@ -420,6 +514,11 @@ void pathtrace(int frame, int iter)
 	// Assemble this iteration and apply it to the image
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
 	finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
+
+	if (ui_denoise_method != 0 && iter == ui_iterations)
+	{
+		denoise(cam);
+	}
 
 	///////////////////////////////////////////////////////////////////////////
 
