@@ -188,7 +188,7 @@ bool init() {
 static ImGuiWindowFlags windowFlags= ImGuiWindowFlags_None | ImGuiWindowFlags_NoMove;
 static bool ui_hide = false;
 
-const char* items[] = { "No Denoise", "Simple Blur", "A-trous Kernel" };
+const char* denoise_options[] = { "No Denoise", "Simple Blur", "A-trous", "A-trous guided by gbuffer" };
 
 void drawGui(int windowWidth, int windowHeight) {
     // Dear imgui new frame
@@ -212,21 +212,16 @@ void drawGui(int windowWidth, int windowHeight) {
         ui_hide = !ui_hide;
     }
 
-    if (ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations)) {
-        configChanged = true;
-    }
+#define CONFIG_CHANGE(x) if (x) { configChanged = true;}  
 
-    if (ImGui::Combo("Denoise", &ui_denoise_method, items, IM_ARRAYSIZE(items)))
-    {
-        configChanged = true;
-    }
+    CONFIG_CHANGE(ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations));
+    CONFIG_CHANGE(ImGui::Combo("Denoise", &ui_denoise_method, denoise_options, IM_ARRAYSIZE(denoise_options)));
+    CONFIG_CHANGE(ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100));
+    CONFIG_CHANGE(ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 100.0f));
+    CONFIG_CHANGE(ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f));
+    CONFIG_CHANGE(ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f));
 
-    if (ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100)){
-        configChanged = true;
-    }
-    ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
+#undef CONFIG_CHANGE(x)
 
     ImGui::Separator();
 

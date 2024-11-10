@@ -21,6 +21,9 @@
 extern int ui_denoise_method;
 extern int ui_filterSize;
 extern int ui_iterations;
+extern float ui_colorWeight;
+extern float ui_normalWeight;
+extern float ui_positionWeight;
 
 #define ERRORCHECK 1
 
@@ -145,9 +148,13 @@ static ShadeableIntersection *dev_intersections = NULL;
 static GBufferPixel *dev_gBuffer = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
-static glm::vec3 *dev_denoised_image = NULL;
-static float *gaussian_device_kernal = NULL;
+static glm::vec3 *dev_denoised_image_in = NULL;
+static glm::vec3 *dev_denoised_image_out = NULL;
+
+static float *dev_gaussian_kernal = NULL;
 static int gaussian_kernel_radius = 0;
+
+static float *dev_atrous_kernal = NULL;
 
 void pathtraceInit(Scene *scene)
 {
@@ -173,9 +180,14 @@ void pathtraceInit(Scene *scene)
 
 	// TODO: initialize any extra device memeory you need
 
-	cudaMalloc(&dev_denoised_image, pixelcount * sizeof(glm::vec3));
-	cudaMemset(dev_denoised_image, 0, pixelcount * sizeof(glm::vec3));
+	cudaMalloc(&dev_denoised_image_out, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_denoised_image_out, 0, pixelcount * sizeof(glm::vec3));
 
+	cudaMalloc(&dev_denoised_image_in, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_denoised_image_in, 0, pixelcount * sizeof(glm::vec3));
+
+	cudaMalloc(&dev_atrous_kernal, 25 * sizeof(float));
+	cudaMemcpy(dev_atrous_kernal, atrous_kernel, 25 * sizeof(float), cudaMemcpyHostToDevice);
 
 	// for Gaussian
 	gaussian_kernel_radius = ui_filterSize / 2;
@@ -184,8 +196,8 @@ void pathtraceInit(Scene *scene)
 	float *gaussian_host_kernal = new float[kernelSize * kernelSize];
 	generateGaussianKernel(gaussian_host_kernal, gaussian_kernel_radius);
 
-	cudaMalloc(&gaussian_device_kernal, kernelSize * kernelSize * sizeof(float));
-	cudaMemcpy(gaussian_device_kernal, gaussian_host_kernal, kernelSize * kernelSize * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMalloc(&dev_gaussian_kernal, kernelSize * kernelSize * sizeof(float));
+	cudaMemcpy(dev_gaussian_kernal, gaussian_host_kernal, kernelSize * kernelSize * sizeof(float), cudaMemcpyHostToDevice);
 	delete (gaussian_host_kernal);
 
 	checkCUDAError("pathtraceInit");
@@ -200,9 +212,11 @@ void pathtraceFree()
 	cudaFree(dev_intersections);
 	cudaFree(dev_gBuffer);
 	// TODO: clean up any extra device memory you created
-	cudaFree(dev_denoised_image);
+	cudaFree(dev_denoised_image_out);
+	cudaFree(dev_denoised_image_in);
 
-	cudaFree(gaussian_device_kernal);
+	cudaFree(dev_gaussian_kernal);
+	cudaFree(dev_atrous_kernal);
 
 	checkCUDAError("pathtraceFree");
 }
@@ -370,7 +384,6 @@ __global__ void finalGather(int nPaths, glm::vec3 *image, PathSegment *iteration
 	}
 }
 
-
 __global__ void gaussianBlur(glm::ivec2 resolution, glm::vec3 *inputImage, glm::vec3 *outputImage, int kernelRadius, float *kernel)
 {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -402,20 +415,119 @@ __global__ void gaussianBlur(glm::ivec2 resolution, glm::vec3 *inputImage, glm::
 	}
 }
 
+// An edge-avoiding a-trous denoising algorithm based on https://jo.dreggn.org/home/2010_atrous.pdf
+__global__ void aTrousFilter(
+	glm::ivec2 resolution,
+	glm::vec3 *inImage,
+	glm::vec3 *outImage,
+	GBufferPixel *gBuffer,
+	float *kernel,
+	float c_phi, float n_phi, float p_phi,
+	float stepwidth, bool avoidEdge)
+{
+	int idx_x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int idx_y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (idx_x >= resolution.x || idx_y >= resolution.y)
+	{
+		return;
+	}
+
+	glm::vec3 sum = glm::vec3(0.f); // accumulate color
+	float sumWeight = 0.f;
+
+	// read GBuffer values for the current pixel
+	int idx = idx_y * resolution.x + idx_x;
+	glm::vec3 cval = inImage[idx];
+	glm::vec3 nval = gBuffer[idx].normal;
+	glm::vec3 pval = gBuffer[idx].position;
+
+	for (int i = -2; i <= 2; i++) // default to using a 5x5 kernel
+	{
+		for (int j = -2; j <= 2; j++)
+		{
+			// find neighboring pixel at desired offset (clamp to image boundaries)
+			int xOffset = idx_x + j * stepwidth;
+			int yOffset = idx_y + i * stepwidth;
+			glm::ivec2 uv = glm::clamp(glm::ivec2(xOffset, yOffset), glm::ivec2(0), resolution);
+
+			float weight = 1.f;
+			float h = kernel[(i + 2) * 5 + (j + 2)];
+
+			// color difference between current and neighboring pixel
+			int currIdx = uv.x + uv.y * resolution.x;
+			glm::vec3 ctemp = inImage[currIdx];
+			glm::vec3 t = cval - ctemp;
+			float dist2 = dot(t, t);
+			float c_w = min(exp(-dist2 / c_phi), 1.f);
+
+			if (avoidEdge)
+			{
+				// normal difference
+				glm::vec3 ntemp = gBuffer[currIdx].normal;
+				t = nval - ntemp;
+				dist2 = max(dot(t, t) / (stepwidth * stepwidth), 0.f);
+				float n_w = min(exp(-dist2 / n_phi), 1.f);
+
+				// position difference
+				glm::vec3 ptemp = gBuffer[currIdx].position;
+				t = pval - ptemp;
+				dist2 = dot(t, t);
+				float p_w = min(exp(-dist2 / p_phi), 1.f);
+
+				// calculate weights
+				weight = c_w * n_w * p_w;
+			}
+
+			sum += ctemp * weight * h;
+			sumWeight += weight * h;
+		}
+	}
+	outImage[idx] = sum / sumWeight;
+}
+
 static void denoise(const Camera &cam)
 {
+	const dim3 blockSize2d(8, 8);
+	const dim3 blocksPerGrid2d(
+		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
 	if (ui_denoise_method == 1)
 	{
-		// Apply Gaussian blur as a post-processing step
-		dim3 blockSize2d(8, 8);
-		dim3 blocksPerGrid2d(
-			(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
-			(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
-
-		gaussianBlur<<<blocksPerGrid2d, blockSize2d>>>(cam.resolution, dev_image, dev_denoised_image, gaussian_kernel_radius, gaussian_device_kernal);
-		cudaMemcpy(dev_image, dev_denoised_image,
-				   cam.resolution.x * cam.resolution.y * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+		// Gaussian blur
+		gaussianBlur<<<blocksPerGrid2d, blockSize2d>>>(cam.resolution, dev_image, dev_denoised_image_out, gaussian_kernel_radius, dev_gaussian_kernal);
 	}
+	else if (ui_denoise_method == 2 || ui_denoise_method == 3)
+	{
+		float c_phi = ui_colorWeight;
+		float n_phi = ui_normalWeight;
+		float p_phi = ui_positionWeight;
+		float filterSize = ui_filterSize;
+		bool avoidEdge = ui_denoise_method == 3;
+
+		// calculate iterations based on filter size
+		int numIter = filterSize < 5 ? 0 : floor(log2(filterSize / 5.f));
+
+		// copy initial input image
+		int pixelCount = cam.resolution.x * cam.resolution.y;
+		cudaMemcpy(dev_denoised_image_in, dev_image, pixelCount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+
+		for (int i = 0; i <= numIter; i++)
+		{
+			float stepwidth = 1 << i;
+			aTrousFilter<<<blocksPerGrid2d, blockSize2d>>>(cam.resolution, dev_denoised_image_in, dev_denoised_image_out,
+														   dev_gBuffer, dev_atrous_kernal, c_phi, n_phi, p_phi, stepwidth, avoidEdge);
+
+			// ping pong buffer, don't swap at the last iteration
+			if (i != numIter - 1)
+			{
+				std::swap(dev_denoised_image_in, dev_denoised_image_out);
+			}
+		}
+	}
+	cudaMemcpy(dev_image, dev_denoised_image_out,
+			   cam.resolution.x * cam.resolution.y * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
 }
 
 /**

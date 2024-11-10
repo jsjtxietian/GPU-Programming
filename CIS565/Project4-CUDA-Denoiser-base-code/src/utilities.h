@@ -14,6 +14,35 @@
 #define SQRT_OF_ONE_THIRD 0.5773502691896257645091487805019574556476f
 #define EPSILON           0.00001f
 
+// http://demofox.org/gauss.html with sigma=1.0, support=0.5
+const float atrous_kernel[25] = {
+	0.003765,
+	0.015019,
+	0.023792,
+	0.015019,
+	0.003765,
+	0.015019,
+	0.059912,
+	0.094907,
+	0.059912,
+	0.015019,
+	0.023792,
+	0.094907,
+	0.150342,
+	0.094907,
+	0.023792,
+	0.015019,
+	0.059912,
+	0.094907,
+	0.059912,
+	0.015019,
+	0.003765,
+	0.015019,
+	0.023792,
+	0.015019,
+	0.003765,
+};
+
 namespace utilityCore {
     extern float clamp(float f, float min, float max);
     extern bool replaceString(std::string& str, const std::string& from, const std::string& to);
