@@ -1,13 +1,8 @@
 CUDA Denoiser For CUDA Path Tracer
 ==================================
 
-**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 4**
-
-* (TODO) YOUR NAME HERE
-* Tested on: (TODO) Windows 22, i7-2222 @ 2.22GHz 22GB, GTX 222 222MB (Moore 2222 Lab)
-
-### (TODO: Your README)
-
-*DO NOT* leave the README to the last minute! It is a crucial part of the
-project, and we will not be able to grade you without a good README.
-
+完成了基础部分：
+1. add UI controls to your project - we've done this for you in this base code, but see Base Code Tour
+2》 implement G-Buffers for normals and positions and visualize them to confirm (see Base Code Tour)
+3. implement the A-trous kernel and its iterations without weighting and compare with a a blur applied from, say, GIMP or Photoshop
+4. use the G-Buffers to preserve perceived edges（论文看不明白，借鉴了Linda的代码）
